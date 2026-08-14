@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Logging;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
@@ -11,98 +10,50 @@ public sealed class BeforeStart : BaseUnityPlugin
 {
     public const string PluginGUID = "Sapphire009.BeforeStart";
     public const string PluginName = "BeforeStart";
-    public const string PluginVersion = "1.0.0";
+    public const string PluginVersion = "1.0.1";
 
-    private const string BuildMarker =
-        "FirstMapWakeJumpLock-R1";
-
-    /*
-     * 캐릭터가 생성된 직후 최소 3초 동안은
-     * 무조건 점프를 차단합니다.
-     */
     private const float MinimumJumpLockDuration = 10f;
-
-    /*
-     * 기상 상태를 정상적으로 감지하지 못해도
-     * 최대 5초가 지나면 점프 차단을 해제합니다.
-     */
     private const float MaximumJumpLockDuration = 15f;
 
-    private const int MaximumLogCount = 50;
-
-    internal static ManualLogSource ModLogger;
-
-    /*
-     * Airport를 거쳐 첫 번째 맵으로 들어갔는지 확인합니다.
-     */
     private static bool airportWasVisited;
     private static bool waitingForFirstMapCharacter;
     private static bool firstMapProtectionConsumed;
 
-    /*
-     * 현재 보호 대상인 첫 맵 씬입니다.
-     */
     private static int protectedSceneHandle = -1;
-    private static string protectedSceneName = string.Empty;
 
-    /*
-     * 현재 점프 차단 대상 캐릭터입니다.
-     */
     private static bool jumpLockActive;
     private static int protectedCharacterId = -1;
     private static float jumpLockStartedAt;
 
-    /*
-     * JumpingPEAK가 JumpRpc 실행 전에 jumpImpulse를 변경하더라도
-     * 차단된 점프에서는 원본값으로 되돌리기 위해 저장합니다.
-     */
-    private static readonly Dictionary<int, float>
-        OriginalJumpImpulses =
-            new Dictionary<int, float>();
-
-    private static int protectionStartedLogCount;
-    private static int blockedJumpLogCount;
-    private static int protectionEndedLogCount;
+    private static readonly Dictionary<int, float> OriginalJumpImpulses =
+        new Dictionary<int, float>();
 
     private Harmony harmony;
 
     private void Awake()
     {
-        ModLogger = Logger;
-
         harmony = new Harmony(PluginGUID);
         harmony.PatchAll();
 
-        SceneManager.sceneLoaded +=
-            OnSceneLoaded;
+        SceneManager.sceneLoaded += OnSceneLoaded;
 
-        Scene activeScene =
-            SceneManager.GetActiveScene();
+        Scene activeScene = SceneManager.GetActiveScene();
 
         if (IsAirportScene(activeScene))
         {
             RegisterAirportVisit();
         }
-
-        Logger.LogInfo(
-            $"{PluginName} {PluginVersion} loaded. " +
-            $"Build: {BuildMarker}. " +
-            $"First-map jumping is disabled for approximately " +
-            $"{MinimumJumpLockDuration:0} to " +
-            $"{MaximumJumpLockDuration:0} seconds after character spawn.");
     }
 
     private void Update()
     {
         TryStartJumpLock();
-
         UpdateJumpLock();
     }
 
     private void OnDestroy()
     {
-        SceneManager.sceneLoaded -=
-            OnSceneLoaded;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
 
         ResetAllState();
 
@@ -111,8 +62,6 @@ public sealed class BeforeStart : BaseUnityPlugin
             harmony.UnpatchSelf();
             harmony = null;
         }
-
-        ModLogger = null;
     }
 
     private static void OnSceneLoaded(
@@ -125,62 +74,32 @@ public sealed class BeforeStart : BaseUnityPlugin
             return;
         }
 
-        /*
-         * Airport를 방문한 뒤 처음 로드되는 실제 Level 씬만
-         * 시작 보호 대상으로 지정합니다.
-         */
         if (airportWasVisited &&
             !firstMapProtectionConsumed &&
             IsGameplayMapScene(scene))
         {
-            protectedSceneHandle =
-                scene.handle;
+            protectedSceneHandle = scene.handle;
 
-            protectedSceneName =
-                scene.name;
+            waitingForFirstMapCharacter = true;
 
-            waitingForFirstMapCharacter =
-                true;
-
-            jumpLockActive =
-                false;
-
-            protectedCharacterId =
-                -1;
+            jumpLockActive = false;
+            protectedCharacterId = -1;
 
             OriginalJumpImpulses.Clear();
-
-            ModLogger?.LogInfo(
-                $"[BeforeStart] Waiting for local character spawn. " +
-                $"Scene={scene.name}");
         }
     }
 
     private static void RegisterAirportVisit()
     {
-        airportWasVisited =
-            true;
+        airportWasVisited = true;
+        waitingForFirstMapCharacter = false;
+        firstMapProtectionConsumed = false;
 
-        waitingForFirstMapCharacter =
-            false;
+        protectedSceneHandle = -1;
 
-        firstMapProtectionConsumed =
-            false;
-
-        protectedSceneHandle =
-            -1;
-
-        protectedSceneName =
-            string.Empty;
-
-        jumpLockActive =
-            false;
-
-        protectedCharacterId =
-            -1;
-
-        jumpLockStartedAt =
-            0f;
+        jumpLockActive = false;
+        protectedCharacterId = -1;
+        jumpLockStartedAt = 0f;
 
         OriginalJumpImpulses.Clear();
     }
@@ -193,17 +112,14 @@ public sealed class BeforeStart : BaseUnityPlugin
             return;
         }
 
-        Scene activeScene =
-            SceneManager.GetActiveScene();
+        Scene activeScene = SceneManager.GetActiveScene();
 
-        if (activeScene.handle !=
-            protectedSceneHandle)
+        if (activeScene.handle != protectedSceneHandle)
         {
             return;
         }
 
-        Character character =
-            Character.localCharacter;
+        Character character = Character.localCharacter;
 
         if (character == null ||
             !character.IsLocal ||
@@ -212,50 +128,25 @@ public sealed class BeforeStart : BaseUnityPlugin
             return;
         }
 
-        CharacterMovement movement =
-            ResolveMovement(character);
+        CharacterMovement movement = ResolveMovement(character);
 
         if (movement == null)
         {
             return;
         }
 
-        protectedCharacterId =
-            character.GetInstanceID();
+        protectedCharacterId = character.GetInstanceID();
+        jumpLockStartedAt = Time.time;
 
-        jumpLockStartedAt =
-            Time.time;
+        jumpLockActive = true;
+        waitingForFirstMapCharacter = false;
+        firstMapProtectionConsumed = true;
 
-        jumpLockActive =
-            true;
-
-        waitingForFirstMapCharacter =
-            false;
-
-        firstMapProtectionConsumed =
-            true;
-
-        int movementId =
-            movement.GetInstanceID();
+        int movementId = movement.GetInstanceID();
 
         if (movement.jumpImpulse > 0f)
         {
-            OriginalJumpImpulses[movementId] =
-                movement.jumpImpulse;
-        }
-
-        if (protectionStartedLogCount <
-            MaximumLogCount)
-        {
-            protectionStartedLogCount++;
-
-            ModLogger?.LogInfo(
-                $"[BeforeStart] First-map jump lock started " +
-                $"({protectionStartedLogCount}/{MaximumLogCount}). " +
-                $"Character={character.name}, " +
-                $"MinimumDuration={MinimumJumpLockDuration:0.00}, " +
-                $"MaximumDuration={MaximumJumpLockDuration:0.00}, " +
-                $"Scene={activeScene.name}");
+            OriginalJumpImpulses[movementId] = movement.jumpImpulse;
         }
     }
 
@@ -266,59 +157,33 @@ public sealed class BeforeStart : BaseUnityPlugin
             return;
         }
 
-        Character character =
-            Character.localCharacter;
+        Character character = Character.localCharacter;
 
         if (character == null ||
             !character.IsLocal ||
-            character.GetInstanceID() !=
-            protectedCharacterId ||
+            character.GetInstanceID() != protectedCharacterId ||
             character.data == null)
         {
-            /*
-             * 씬 전환 또는 캐릭터 교체가 발생하면
-             * 기존 차단 상태를 종료합니다.
-             */
-            EndJumpLock(
-                "CharacterUnavailable");
-
+            EndJumpLock();
             return;
         }
 
-        float elapsed =
-            Time.time -
-            jumpLockStartedAt;
+        float elapsed = Time.time - jumpLockStartedAt;
 
         bool minimumDurationFinished =
-            elapsed >=
-            MinimumJumpLockDuration;
+            elapsed >= MinimumJumpLockDuration;
 
         bool maximumDurationFinished =
-            elapsed >=
-            MaximumJumpLockDuration;
+            elapsed >= MaximumJumpLockDuration;
 
         bool characterRecovered =
-            HasCharacterFinishedWaking(
-                character);
+            HasCharacterFinishedWaking(character);
 
-        /*
-         * 최소 3초가 지났고 캐릭터가 정상적으로 일어났다면 해제합니다.
-         *
-         * 기상 상태값이 비정상적으로 남아 있더라도
-         * 5초가 지나면 안전장치로 해제합니다.
-         */
         if ((minimumDurationFinished &&
              characterRecovered) ||
             maximumDurationFinished)
         {
-            string reason =
-                maximumDurationFinished &&
-                !characterRecovered
-                    ? "MaximumDurationReached"
-                    : "CharacterRecovered";
-
-            EndJumpLock(
-                reason);
+            EndJumpLock();
         }
     }
 
@@ -338,31 +203,22 @@ public sealed class BeforeStart : BaseUnityPlugin
             return false;
         }
 
-        if (character.data.fallSeconds >
-            0.01f)
+        if (character.data.fallSeconds > 0.01f)
         {
             return false;
         }
 
-        if (character.data.passedOutOnTheBeach >
-            0f)
+        if (character.data.passedOutOnTheBeach > 0f)
         {
             return false;
         }
 
-        /*
-         * 캐릭터가 아직 래그돌 상태를 목표로 하고 있거나
-         * 실제 제어값이 충분히 회복되지 않았다면
-         * 아직 기상 중인 것으로 처리합니다.
-         */
-        if (character.data.currentRagdollControll <
-            0.9f)
+        if (character.data.currentRagdollControll < 0.9f)
         {
             return false;
         }
 
-        if (character.data.GetTargetRagdollControll() <
-            0.9f)
+        if (character.data.GetTargetRagdollControll() < 0.9f)
         {
             return false;
         }
@@ -370,58 +226,30 @@ public sealed class BeforeStart : BaseUnityPlugin
         return true;
     }
 
-    private static void EndJumpLock(
-        string reason)
+    private static void EndJumpLock()
     {
         if (!jumpLockActive)
         {
             return;
         }
 
-        float elapsed =
-            Time.time -
-            jumpLockStartedAt;
+        Character character = Character.localCharacter;
+        CharacterMovement movement = ResolveMovement(character);
 
-        Character character =
-            Character.localCharacter;
+        RestoreOriginalJumpImpulse(movement);
 
-        CharacterMovement movement =
-            ResolveMovement(character);
-
-        RestoreOriginalJumpImpulse(
-            movement);
-
-        jumpLockActive =
-            false;
-
-        protectedCharacterId =
-            -1;
-
-        jumpLockStartedAt =
-            0f;
+        jumpLockActive = false;
+        protectedCharacterId = -1;
+        jumpLockStartedAt = 0f;
 
         OriginalJumpImpulses.Clear();
-
-        if (protectionEndedLogCount <
-            MaximumLogCount)
-        {
-            protectionEndedLogCount++;
-
-            ModLogger?.LogInfo(
-                $"[BeforeStart] First-map jump lock ended " +
-                $"({protectionEndedLogCount}/{MaximumLogCount}). " +
-                $"Reason={reason}, " +
-                $"Elapsed={elapsed:0.000}, " +
-                $"Scene={SceneManager.GetActiveScene().name}");
-        }
     }
 
     internal static bool ShouldBlockJump(
         CharacterMovement movement,
         out Character character)
     {
-        character =
-            ResolveCharacter(movement);
+        character = ResolveCharacter(movement);
 
         if (!jumpLockActive ||
             movement == null ||
@@ -431,17 +259,14 @@ public sealed class BeforeStart : BaseUnityPlugin
             return false;
         }
 
-        if (character.GetInstanceID() !=
-            protectedCharacterId)
+        if (character.GetInstanceID() != protectedCharacterId)
         {
             return false;
         }
 
-        Scene activeScene =
-            SceneManager.GetActiveScene();
+        Scene activeScene = SceneManager.GetActiveScene();
 
-        if (activeScene.handle !=
-            protectedSceneHandle)
+        if (activeScene.handle != protectedSceneHandle)
         {
             return false;
         }
@@ -503,11 +328,9 @@ public sealed class BeforeStart : BaseUnityPlugin
             return;
         }
 
-        int movementId =
-            movement.GetInstanceID();
+        int movementId = movement.GetInstanceID();
 
-        if (OriginalJumpImpulses.ContainsKey(
-                movementId))
+        if (OriginalJumpImpulses.ContainsKey(movementId))
         {
             return;
         }
@@ -530,60 +353,14 @@ public sealed class BeforeStart : BaseUnityPlugin
             return;
         }
 
-        float originalJumpImpulse;
-
         if (!OriginalJumpImpulses.TryGetValue(
                 movement.GetInstanceID(),
-                out originalJumpImpulse))
+                out float originalJumpImpulse))
         {
             return;
         }
 
-        movement.jumpImpulse =
-            originalJumpImpulse;
-    }
-
-    private static void LogBlockedJump(
-        Character character,
-        string source)
-    {
-        if (blockedJumpLogCount >=
-            MaximumLogCount)
-        {
-            return;
-        }
-
-        blockedJumpLogCount++;
-
-        float elapsed =
-            Time.time -
-            jumpLockStartedAt;
-
-        string passedOutText =
-            "Unknown";
-
-        string fallSecondsText =
-            "Unknown";
-
-        if (character != null &&
-            character.data != null)
-        {
-            passedOutText =
-                character.data.passedOut.ToString();
-
-            fallSecondsText =
-                character.data.fallSeconds.ToString(
-                    "0.000");
-        }
-
-        ModLogger?.LogInfo(
-            $"[BeforeStart] Jump blocked " +
-            $"({blockedJumpLogCount}/{MaximumLogCount}). " +
-            $"Source={source}, " +
-            $"Elapsed={elapsed:0.000}, " +
-            $"PassedOut={passedOutText}, " +
-            $"FallSeconds={fallSecondsText}, " +
-            $"Scene={SceneManager.GetActiveScene().name}");
+        movement.jumpImpulse = originalJumpImpulse;
     }
 
     private static bool IsAirportScene(
@@ -609,9 +386,6 @@ public sealed class BeforeStart : BaseUnityPlugin
             return false;
         }
 
-        /*
-         * 기본 PEAK 맵은 Level_숫자 형태로 로드됩니다.
-         */
         return scene.name.StartsWith(
             "Level_",
             StringComparison.OrdinalIgnoreCase);
@@ -619,46 +393,19 @@ public sealed class BeforeStart : BaseUnityPlugin
 
     private static void ResetAllState()
     {
-        airportWasVisited =
-            false;
+        airportWasVisited = false;
+        waitingForFirstMapCharacter = false;
+        firstMapProtectionConsumed = false;
 
-        waitingForFirstMapCharacter =
-            false;
+        protectedSceneHandle = -1;
 
-        firstMapProtectionConsumed =
-            false;
-
-        protectedSceneHandle =
-            -1;
-
-        protectedSceneName =
-            string.Empty;
-
-        jumpLockActive =
-            false;
-
-        protectedCharacterId =
-            -1;
-
-        jumpLockStartedAt =
-            0f;
+        jumpLockActive = false;
+        protectedCharacterId = -1;
+        jumpLockStartedAt = 0f;
 
         OriginalJumpImpulses.Clear();
-
-        protectionStartedLogCount =
-            0;
-
-        blockedJumpLogCount =
-            0;
-
-        protectionEndedLogCount =
-            0;
     }
 
-    /*
-     * 사용자가 직접 누르는 일반 점프를
-     * TryToJump 단계에서 먼저 차단합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterMovement),
         "TryToJump")]
@@ -678,24 +425,13 @@ public sealed class BeforeStart : BaseUnityPlugin
                 return true;
             }
 
-            CaptureOriginalJumpImpulse(
-                __instance);
-
-            RestoreOriginalJumpImpulse(
-                __instance);
-
-            LogBlockedJump(
-                character,
-                "TryToJump");
+            CaptureOriginalJumpImpulse(__instance);
+            RestoreOriginalJumpImpulse(__instance);
 
             return false;
         }
     }
 
-    /*
-     * NoGround처럼 TryToJump를 통하지 않고
-     * JumpRpc를 직접 호출하는 자동 점프도 차단합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterMovement),
         nameof(CharacterMovement.JumpRpc),
@@ -718,8 +454,7 @@ public sealed class BeforeStart : BaseUnityPlugin
             bool __0,
             out bool __state)
         {
-            __state =
-                false;
+            __state = false;
 
             Character character;
 
@@ -730,25 +465,11 @@ public sealed class BeforeStart : BaseUnityPlugin
                 return true;
             }
 
-            CaptureOriginalJumpImpulse(
-                __instance);
+            CaptureOriginalJumpImpulse(__instance);
+            RestoreOriginalJumpImpulse(__instance);
 
-            RestoreOriginalJumpImpulse(
-                __instance);
+            __state = true;
 
-            __state =
-                true;
-
-            LogBlockedJump(
-                character,
-                __0
-                    ? "JumpRpc-PalJump"
-                    : "JumpRpc-Normal");
-
-            /*
-             * PEAK 원본 JumpRpc와 JumpingPEAK의 강화 처리를
-             * 모두 실행하지 않도록 차단합니다.
-             */
             return false;
         }
 
@@ -769,12 +490,7 @@ public sealed class BeforeStart : BaseUnityPlugin
                 return;
             }
 
-            /*
-             * 다른 Prefix가 jumpImpulse를 변경했더라도
-             * 차단된 점프에서는 원본값으로 복구합니다.
-             */
-            RestoreOriginalJumpImpulse(
-                __instance);
+            RestoreOriginalJumpImpulse(__instance);
         }
     }
 }
