@@ -1,10 +1,9 @@
 using BepInEx;
-using BepInEx.Logging;
 using HarmonyLib;
+using Photon.Pun;
 using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using Photon.Pun;
 
 [BepInPlugin(
     PluginGUID,
@@ -19,123 +18,49 @@ public sealed class HelpUp : BaseUnityPlugin
         "HelpUp";
 
     public const string PluginVersion =
-        "0.0.1";
+        "0.0.2";
 
-    private const string BuildMarker =
-        "ExtendedCoopPull-R1-10Meters";
-
-    /*
-     * PEAK 원본 도움 범위는 4m입니다.
-     *
-     * JumpingPEAK 일반 점프가 원본 ×5,
-     * Runup 협동 점프가 최종 원본 ×6.25이므로
-     * 단순 비례 범위는 20~25m가 됩니다.
-     *
-     * 하지만 20m 이상은 발판 여러 개를 건너뛰고
-     * 맵 전체에서 동료를 당길 가능성이 있어 과도합니다.
-     *
-     * 따라서 원본 4m의 2.5배인 10m를 사용합니다.
-     * 한 번의 강화 점프 구간을 구조할 수 있지만
-     * 전체 구간을 무시할 정도는 아닌 범위입니다.
-     */
     private const float ExtendedHelpRange =
         10f;
 
-    /*
-     * 원본 범위와 힘입니다.
-     */
     private const float NativeHelpRange =
         4f;
 
     private const float NativePullForce =
         70f;
 
-    /*
-     * 10m 거리에서는 약간 더 강한 힘을 사용합니다.
-     *
-     * 가까운 동료: 70
-     * 먼 동료: 최대 95
-     */
     private const float MaximumPullForce =
         95f;
 
-    /*
-     * 원본 시야각은 60도입니다.
-     *
-     * 강화된 점프로 빠르게 움직이는 동료를 조준하기 쉽게
-     * 65도로 조금만 확장합니다.
-     */
     private const float MaximumHelpAngle =
         65f;
 
-    /*
-     * 착지 직전 또는 바닥에 정상적으로 서 있는 동료가
-     * 실수로 끌려가는 것을 막기 위한 최소 공중 시간입니다.
-     */
     private const float MinimumAirborneTime =
         0.12f;
 
-    /*
-     * 도움을 주는 사람보다 너무 높은 곳에 있는 동료는
-     * 끌어내리지 않도록 제한합니다.
-     *
-     * 주 용도는 위쪽 발판의 플레이어가
-     * 아래에서 떨어지는 동료를 구조하는 것입니다.
-     */
     private const float MaximumTargetHeightAboveHelper =
         1.5f;
 
-    private const int MaximumLogCount =
-        50;
-
     private static readonly int HelpAnimatorHash =
-        Animator.StringToHash(
-            "Help");
-
-    internal static ManualLogSource ModLogger;
-
-    private static int pullStartedLogCount;
-    private static int blockedByWallLogCount;
+        Animator.StringToHash("Help");
 
     private Harmony harmony;
 
     private void Awake()
     {
-        ModLogger =
-            Logger;
-
         harmony =
-            new Harmony(
-                PluginGUID);
+            new Harmony(PluginGUID);
 
         harmony.PatchAll();
-
-        Logger.LogInfo(
-            $"{PluginName} {PluginVersion} loaded. " +
-            $"Build: {BuildMarker}. " +
-            $"Help range={ExtendedHelpRange:0.0}m, " +
-            $"angle={MaximumHelpAngle:0.0} degrees, " +
-            $"pull force={NativePullForce:0.0}-" +
-            $"{MaximumPullForce:0.0}. " +
-            "Airborne teammates can now be rescued.");
     }
 
     private void OnDestroy()
     {
-        pullStartedLogCount =
-            0;
-
-        blockedByWallLogCount =
-            0;
-
         if (harmony != null)
         {
             harmony.UnpatchSelf();
             harmony = null;
         }
-
-        ModLogger =
-            null;
     }
 
     internal static bool IsAirportScene()
@@ -193,20 +118,6 @@ public sealed class HelpUp : BaseUnityPlugin
         return helper.data.isReaching;
     }
 
-    /*
-     * 벽을 잡을 수 없는 현재 모드 구조에서는
-     * PEAK 원본 조건인 isClimbing만 검사하면
-     * 구조 기능이 거의 작동하지 않습니다.
-     *
-     * 따라서 다음 플레이어도 도움 대상으로 추가합니다.
-     *
-     * - 공중에서 점프 중인 플레이어
-     * - 아래로 떨어지는 플레이어
-     * - 넘어진 플레이어
-     * - 기절한 플레이어
-     * - 거미줄에 걸린 플레이어
-     * - 다른 오브젝트에 끼인 플레이어
-     */
     private static bool TargetCanBeHelped(
         Character helper,
         Character target)
@@ -255,10 +166,6 @@ public sealed class HelpUp : BaseUnityPlugin
             target.data.sinceGrounded >
             MinimumAirborneTime;
 
-        /*
-         * 도움을 주는 사람보다 지나치게 높은 플레이어를
-         * 아래로 잡아당기는 악용을 방지합니다.
-         */
         bool acceptableHeight =
             target.Center.y <=
             helper.Center.y +
@@ -282,12 +189,6 @@ public sealed class HelpUp : BaseUnityPlugin
             passedOut;
     }
 
-    /*
-     * 지형을 관통해서 동료를 끌어당기지 못하게 합니다.
-     *
-     * 플레이어 사이에 TerrainMap 벽이 있으면
-     * 도움 기능이 작동하지 않습니다.
-     */
     private static bool HasClearLineOfSight(
         Character helper,
         Character target)
@@ -334,13 +235,6 @@ public sealed class HelpUp : BaseUnityPlugin
         GUIManager.instance.Grasp();
     }
 
-    /*
-     * PEAK 원본의 Character.UnStick()은 internal 메서드라서
-     * 외부 플러그인 어셈블리에서는 직접 호출할 수 없습니다.
-     *
-     * 원본과 동일하게 공개된 RPCA_Unstick RPC를
-     * 모든 클라이언트에 전송합니다.
-     */
     private static void UnstickCharacter(
         Character target)
     {
@@ -357,13 +251,6 @@ public sealed class HelpUp : BaseUnityPlugin
             Array.Empty<object>());
     }
 
-    /*
-     * PEAK 원본의 Character.DragTowards()는 internal 메서드라서
-     * 외부 플러그인에서 직접 호출할 수 없습니다.
-     *
-     * 원본 구현과 동일하게 드래그 이벤트를 호출한 뒤
-     * 모든 래그돌 바디파트에 가속도 힘을 적용합니다.
-     */
     private static void DragCharacterTowards(
         Character target,
         Vector3 destination,
@@ -403,10 +290,6 @@ public sealed class HelpUp : BaseUnityPlugin
         }
     }
 
-    /*
-     * PEAK 원본의 Character.LimitFalling()도 internal 메서드입니다.
-     * 원본 구현과 동일한 두 타이머 제한을 직접 적용합니다.
-     */
     private static void LimitCharacterFalling(
         Character target)
     {
@@ -488,28 +371,9 @@ public sealed class HelpUp : BaseUnityPlugin
                     helper,
                     target))
             {
-                if (blockedByWallLogCount <
-                    MaximumLogCount)
-                {
-                    blockedByWallLogCount++;
-
-                    ModLogger?.LogInfo(
-                        $"[HelpUp] Pull blocked by terrain " +
-                        $"({blockedByWallLogCount}/" +
-                        $"{MaximumLogCount}). " +
-                        $"Distance={distance:0.00}, " +
-                        $"Angle={angle:0.00}, " +
-                        $"Scene=" +
-                        $"{SceneManager.GetActiveScene().name}");
-                }
-
                 continue;
             }
 
-            /*
-             * PEAK 원본처럼 끼인 플레이어와
-             * 거미줄 상태를 함께 처리합니다.
-             */
             if (target.IsStuck() &&
                 target.IsLocal)
             {
@@ -533,21 +397,11 @@ public sealed class HelpUp : BaseUnityPlugin
                     0f;
             }
 
-            /*
-             * 도움을 주는 플레이어 화면에
-             * 잡기 피드백을 표시합니다.
-             */
             if (helper.refs.view.IsMine)
             {
                 ShowGraspEffect();
             }
 
-            /*
-             * 대상 플레이어의 소유 클라이언트에서만
-             * 실제 물리력을 적용합니다.
-             *
-             * 이것이 PEAK 원본 네트워크 처리 방식입니다.
-             */
             if (!target.refs.view.IsMine)
             {
                 continue;
@@ -562,45 +416,13 @@ public sealed class HelpUp : BaseUnityPlugin
                 helper.Center,
                 pullForce);
 
-            /*
-             * 당기는 도중 과도하게 낙하하지 않도록
-             * PEAK 원본과 같은 제한을 적용합니다.
-             */
             LimitCharacterFalling(
                 target);
 
             ShowGraspEffect();
-
-            if (pullStartedLogCount <
-                MaximumLogCount)
-            {
-                pullStartedLogCount++;
-
-                ModLogger?.LogInfo(
-                    $"[HelpUp] Extended teammate pull applied " +
-                    $"({pullStartedLogCount}/" +
-                    $"{MaximumLogCount}). " +
-                    $"Helper={helper.name}, " +
-                    $"Target={target.name}, " +
-                    $"Distance={distance:0.00}, " +
-                    $"Angle={angle:0.00}, " +
-                    $"PullForce={pullForce:0.00}, " +
-                    $"TargetGrounded=" +
-                    $"{target.data.isGrounded}, " +
-                    $"TargetFallSeconds=" +
-                    $"{target.data.fallSeconds:0.000}, " +
-                    $"Scene=" +
-                    $"{SceneManager.GetActiveScene().name}");
-            }
         }
     }
 
-    /*
-     * PEAK 원본 CharacterGrabbing.Reach를 대체합니다.
-     *
-     * 우클릭을 누르고 있는 동안 원본 FixedUpdate가
-     * 계속 Reach를 호출하므로 입력 코드를 새로 만들 필요가 없습니다.
-     */
     [HarmonyPatch(
         typeof(CharacterGrabbing),
         "Reach")]
@@ -614,10 +436,6 @@ public sealed class HelpUp : BaseUnityPlugin
                 ResolveCharacter(
                     __instance);
 
-            /*
-             * 공항이나 유효하지 않은 캐릭터에서는
-             * PEAK 원본 Reach를 그대로 실행합니다.
-             */
             if (helper == null ||
                 helper.data == null ||
                 helper.refs == null ||
@@ -629,20 +447,10 @@ public sealed class HelpUp : BaseUnityPlugin
             RunExtendedReach(
                 helper);
 
-            /*
-             * 원본 4m Reach가 중복 실행되지 않게 차단합니다.
-             */
             return false;
         }
     }
 
-    /*
-     * PEAK 원본 도움 애니메이션은
-     * grabFriendDistance가 3.5m 이하일 때만 활성화됩니다.
-     *
-     * 확장 범위에서도 Help 애니메이션이 표시되도록
-     * 원본 CharacterAnimations.Update 뒤에서 보정합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAnimations),
         "Update")]
