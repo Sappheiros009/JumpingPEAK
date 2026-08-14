@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Logging;
 using HarmonyLib;
 using Peak.Afflictions;
 using System;
@@ -12,58 +11,29 @@ public sealed class StaminaFull : BaseUnityPlugin
 {
     public const string PluginGUID = "Sapphire009.StaminaFull";
     public const string PluginName = "StaminaFull";
-    public const string PluginVersion = "1.0.0";
+    public const string PluginVersion = "1.0.2";
 
-    private const string BuildMarker =
-        "InfiniteStamina-AllStatusBlock-R2";
-
-    private const int MaximumLogCount = 50;
-
-    internal static ManualLogSource ModLogger;
-
-    /*
-     * 보너스 스태미나가 직접 수정되는 경우에도
-     * 이전보다 감소하지 않도록 캐릭터별 최고값을 저장합니다.
-     */
     private static readonly Dictionary<int, float>
         PreservedExtraStamina =
             new Dictionary<int, float>();
-
-    private static int blockedStatusLogCount;
-    private static int blockedAfflictionLogCount;
-    private static int blockedThornLogCount;
 
     private Harmony harmony;
 
     private void Awake()
     {
-        ModLogger = Logger;
-
         harmony = new Harmony(PluginGUID);
         harmony.PatchAll();
-
-        Logger.LogInfo(
-            $"{PluginName} {PluginVersion} loaded. " +
-            $"Build: {BuildMarker}. " +
-            "Infinite stamina and complete status protection " +
-            "are enabled outside Airport.");
     }
 
     private void OnDestroy()
     {
         PreservedExtraStamina.Clear();
 
-        blockedStatusLogCount = 0;
-        blockedAfflictionLogCount = 0;
-        blockedThornLogCount = 0;
-
         if (harmony != null)
         {
             harmony.UnpatchSelf();
             harmony = null;
         }
-
-        ModLogger = null;
     }
 
     internal static bool IsAirportScene()
@@ -113,10 +83,6 @@ public sealed class StaminaFull : BaseUnityPlugin
             afflictions.character);
     }
 
-    /*
-     * 일반 스태미나를 현재 최대치로 복구하고,
-     * 보너스 스태미나는 이전 값보다 감소하지 않게 합니다.
-     */
     internal static void FillAndPreserveStamina(
         Character character)
     {
@@ -134,10 +100,6 @@ public sealed class StaminaFull : BaseUnityPlugin
         float maximumStamina =
             character.GetMaxStamina();
 
-        /*
-         * 모든 상태를 0으로 유지하므로 일반 최대치는
-         * 정상적으로 1이 됩니다.
-         */
         maximumStamina =
             Mathf.Max(
                 maximumStamina,
@@ -161,11 +123,9 @@ public sealed class StaminaFull : BaseUnityPlugin
         int characterId =
             character.GetInstanceID();
 
-        float preservedExtra;
-
         if (!PreservedExtraStamina.TryGetValue(
                 characterId,
-                out preservedExtra))
+                out float preservedExtra))
         {
             preservedExtra =
                 character.data.extraStamina;
@@ -176,10 +136,6 @@ public sealed class StaminaFull : BaseUnityPlugin
         }
         else
         {
-            /*
-             * 아이템 등으로 보너스 스태미나가 증가하면
-             * 새로운 최고값으로 저장합니다.
-             */
             if (character.data.extraStamina >
                 preservedExtra)
             {
@@ -190,10 +146,6 @@ public sealed class StaminaFull : BaseUnityPlugin
                     characterId] =
                         preservedExtra;
             }
-            /*
-             * 보너스 스태미나가 감소했다면
-             * 저장된 값으로 되돌립니다.
-             */
             else if (character.data.extraStamina <
                      preservedExtra)
             {
@@ -213,10 +165,6 @@ public sealed class StaminaFull : BaseUnityPlugin
         }
     }
 
-    /*
-     * 이미 적용돼 있던 부상, 허기, 독 등의 상태와
-     * 지속형 Affliction 및 가시를 제거합니다.
-     */
     internal static void ClearAllNegativeStates(
         Character character)
     {
@@ -247,10 +195,6 @@ public sealed class StaminaFull : BaseUnityPlugin
                 continue;
             }
 
-            /*
-             * SetStatus의 0 감소는 허용되므로
-             * 현재 적용된 모든 상태를 제거합니다.
-             */
             afflictions.SetStatus(
                 statusType,
                 0f,
@@ -260,10 +204,6 @@ public sealed class StaminaFull : BaseUnityPlugin
                 true;
         }
 
-        /*
-         * Web 상태값이 이미 0이어도 내부 플래그가 남아 있으면
-         * 거미줄 판정이 계속될 수 있으므로 함께 해제합니다.
-         */
         if (afflictions.isWebbed)
         {
             afflictions.SetStatus(
@@ -284,19 +224,12 @@ public sealed class StaminaFull : BaseUnityPlugin
                 null);
         }
 
-        /*
-         * 독 지속 피해, 좀비 감염, 졸음, 저주,
-         * 스태미나 변화 등의 지속형 Affliction도 제거합니다.
-         */
         if (afflictions.afflictionList != null &&
             afflictions.afflictionList.Count > 0)
         {
             afflictions.ClearAllAfflictions();
         }
 
-        /*
-         * 이미 몸에 박힌 가시도 제거합니다.
-         */
         if (afflictions.physicalThorns != null)
         {
             for (int i =
@@ -314,22 +247,19 @@ public sealed class StaminaFull : BaseUnityPlugin
                 }
 
                 afflictions.RemoveThorn(
-                    thorn);
+                    thorn,
+                    false);
             }
         }
     }
 
-    /*
-     * 등반, 달리기, 물건 들기 등에서 호출되는
-     * PEAK 원본 스태미나 소비를 성공 처리하면서
-     * 실제 수치는 차감하지 않습니다.
-     */
     [HarmonyPatch(
         typeof(Character),
         "UseStamina",
         new Type[]
         {
             typeof(float),
+            typeof(bool),
             typeof(bool)
         })]
     private static class CharacterUseStaminaPatch
@@ -339,6 +269,7 @@ public sealed class StaminaFull : BaseUnityPlugin
             Character __instance,
             float __0,
             bool __1,
+            bool __2,
             ref bool __result)
         {
             float usage =
@@ -358,10 +289,6 @@ public sealed class StaminaFull : BaseUnityPlugin
             FillAndPreserveStamina(
                 __instance);
 
-            /*
-             * 스태미나를 사용했다는 시간 기록은 유지하지만
-             * currentStamina와 extraStamina는 감소시키지 않습니다.
-             */
             __instance.data.sinceUseStamina =
                 0f;
 
@@ -372,10 +299,6 @@ public sealed class StaminaFull : BaseUnityPlugin
         }
     }
 
-    /*
-     * AddStamina에 음수가 들어와 직접 스태미나를
-     * 감소시키는 경로도 차단합니다.
-     */
     [HarmonyPatch(
         typeof(Character),
         nameof(Character.AddStamina),
@@ -403,10 +326,6 @@ public sealed class StaminaFull : BaseUnityPlugin
         }
     }
 
-    /*
-     * 보너스 스태미나를 낮은 값으로 직접 설정하는 경로를
-     * 즉시 차단합니다.
-     */
     [HarmonyPatch(
         typeof(Character),
         nameof(Character.SetExtraStamina),
@@ -440,9 +359,6 @@ public sealed class StaminaFull : BaseUnityPlugin
         }
     }
 
-    /*
-     * AddExtraStamina에 음수가 들어오는 경우도 차단합니다.
-     */
     [HarmonyPatch(
         typeof(Character),
         nameof(Character.AddExtraStamina),
@@ -470,11 +386,6 @@ public sealed class StaminaFull : BaseUnityPlugin
         }
     }
 
-    /*
-     * Injury, Hunger, Cold, Poison, Crab, Curse,
-     * Drowsy, Weight, Hot, Thorns, Spores, Web 등
-     * 모든 양수 상태 추가를 차단합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAfflictions),
         nameof(CharacterAfflictions.AddStatus),
@@ -498,9 +409,6 @@ public sealed class StaminaFull : BaseUnityPlugin
             bool __4,
             ref bool __result)
         {
-            CharacterAfflictions.STATUSTYPE statusType =
-                __0;
-
             float amount =
                 __1;
 
@@ -513,18 +421,10 @@ public sealed class StaminaFull : BaseUnityPlugin
             __result =
                 false;
 
-            LogBlockedStatus(
-                statusType,
-                amount,
-                "AddStatus");
-
             return false;
         }
     }
 
-    /*
-     * AdjustStatus를 통해 들어오는 양수 상태 변화도 차단합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAfflictions),
         nameof(CharacterAfflictions.AdjustStatus),
@@ -543,9 +443,6 @@ public sealed class StaminaFull : BaseUnityPlugin
             float __1,
             bool __2)
         {
-            CharacterAfflictions.STATUSTYPE statusType =
-                __0;
-
             float amount =
                 __1;
 
@@ -555,21 +452,10 @@ public sealed class StaminaFull : BaseUnityPlugin
                 return true;
             }
 
-            LogBlockedStatus(
-                statusType,
-                amount,
-                "AdjustStatus");
-
             return false;
         }
     }
 
-    /*
-     * SetStatus가 현재보다 높은 수치로 상태를 직접 지정하는
-     * 경로도 차단합니다.
-     *
-     * 상태를 0으로 낮추는 동작은 허용합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAfflictions),
         nameof(CharacterAfflictions.SetStatus),
@@ -604,31 +490,16 @@ public sealed class StaminaFull : BaseUnityPlugin
                 __instance.GetCurrentStatus(
                     statusType);
 
-            /*
-             * 현재보다 낮은 수치나 0으로 치료하는 동작은 허용합니다.
-             */
             if (requestedAmount <=
                 currentAmount)
             {
                 return true;
             }
 
-            LogBlockedStatus(
-                statusType,
-                requestedAmount - currentAmount,
-                "SetStatus");
-
             return false;
         }
     }
 
-    /*
-     * PoisonOverTime, ZombieBite, Drowsy 등
-     * 지속형 Affliction 자체의 추가를 차단합니다.
-     *
-     * 모든 Affliction을 막으므로 유익한 시간제 버프도
-     * 이 모드가 활성화된 동안에는 추가되지 않습니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAfflictions),
         nameof(CharacterAfflictions.AddAffliction),
@@ -651,45 +522,25 @@ public sealed class StaminaFull : BaseUnityPlugin
                 return true;
             }
 
-            if (blockedAfflictionLogCount <
-                MaximumLogCount)
-            {
-                blockedAfflictionLogCount++;
-
-                string afflictionName =
-                    __0 != null
-                        ? __0.GetType().Name
-                        : "null";
-
-                ModLogger?.LogInfo(
-                    $"[StaminaFull] Affliction blocked " +
-                    $"({blockedAfflictionLogCount}/" +
-                    $"{MaximumLogCount}). " +
-                    $"Affliction={afflictionName}, " +
-                    $"Scene=" +
-                    $"{SceneManager.GetActiveScene().name}");
-            }
-
             return false;
         }
     }
 
-    /*
-     * 위치 기반 가시 추가를 차단합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAfflictions),
         nameof(CharacterAfflictions.AddThorn),
         new Type[]
         {
-            typeof(Vector3)
+            typeof(Vector3),
+            typeof(int)
         })]
     private static class CharacterAfflictionsAddThornPositionPatch
     {
         [HarmonyPrefix]
         private static bool Prefix(
             CharacterAfflictions __instance,
-            Vector3 __0)
+            Vector3 __0,
+            int __1)
         {
             if (!CanApplyProtection(
                     __instance))
@@ -697,28 +548,27 @@ public sealed class StaminaFull : BaseUnityPlugin
                 return true;
             }
 
-            LogBlockedThorn();
-
             return false;
         }
     }
 
-    /*
-     * 인덱스 기반 가시 추가도 차단합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAfflictions),
         nameof(CharacterAfflictions.AddThorn),
         new Type[]
         {
-            typeof(ushort)
+            typeof(int),
+            typeof(ushort),
+            typeof(bool)
         })]
     private static class CharacterAfflictionsAddThornIndexPatch
     {
         [HarmonyPrefix]
         private static bool Prefix(
             CharacterAfflictions __instance,
-            ushort __0)
+            int __0,
+            ushort __1,
+            bool __2)
         {
             if (!CanApplyProtection(
                     __instance))
@@ -726,16 +576,10 @@ public sealed class StaminaFull : BaseUnityPlugin
                 return true;
             }
 
-            LogBlockedThorn();
-
             return false;
         }
     }
 
-    /*
-     * RPC를 통해 가시 오브젝트가 직접 활성화되는 경우도
-     * 로컬 캐릭터에서는 차단합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterAfflictions),
         nameof(CharacterAfflictions.RPC_EnableThorn),
@@ -756,16 +600,10 @@ public sealed class StaminaFull : BaseUnityPlugin
                 return true;
             }
 
-            LogBlockedThorn();
-
             return false;
         }
     }
 
-    /*
-     * 다른 코드나 네트워크 동기화가 값을 직접 변경했더라도
-     * 다음 물리 프레임에 다시 완전한 상태로 복구합니다.
-     */
     [HarmonyPatch(
         typeof(Character),
         "FixedUpdate")]
@@ -793,43 +631,5 @@ public sealed class StaminaFull : BaseUnityPlugin
             FillAndPreserveStamina(
                 __instance);
         }
-    }
-
-    private static void LogBlockedStatus(
-        CharacterAfflictions.STATUSTYPE statusType,
-        float amount,
-        string source)
-    {
-        if (blockedStatusLogCount >=
-            MaximumLogCount)
-        {
-            return;
-        }
-
-        blockedStatusLogCount++;
-
-        ModLogger?.LogInfo(
-            $"[StaminaFull] Status blocked " +
-            $"({blockedStatusLogCount}/{MaximumLogCount}). " +
-            $"Status={statusType}, " +
-            $"Amount={amount:0.0000}, " +
-            $"Source={source}, " +
-            $"Scene={SceneManager.GetActiveScene().name}");
-    }
-
-    private static void LogBlockedThorn()
-    {
-        if (blockedThornLogCount >=
-            MaximumLogCount)
-        {
-            return;
-        }
-
-        blockedThornLogCount++;
-
-        ModLogger?.LogInfo(
-            $"[StaminaFull] Thorn blocked " +
-            $"({blockedThornLogCount}/{MaximumLogCount}). " +
-            $"Scene={SceneManager.GetActiveScene().name}");
     }
 }
