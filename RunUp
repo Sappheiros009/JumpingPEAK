@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Logging;
 using HarmonyLib;
 using System;
 using System.Collections;
@@ -20,50 +19,17 @@ public sealed class Runup : BaseUnityPlugin
         "Runup";
 
     public const string PluginVersion =
-        "1.0.0";
+        "1.0.1";
 
-    private const string BuildMarker =
-        "PalJump-AboveJumpingPEAK-R4";
-
-    /*
-     * 현재 JumpingPEAK의 일반 강화 점프:
-     *
-     * 원본 jumpImpulse × 5
-     */
     private const float JumpingPeakJumpMultiplier =
         5f;
 
-    /*
-     * 이전 Runup 최종 점프력:
-     *
-     * 원본 × 약 41.6667
-     *
-     * 이번 수정에서는 점프력을 절반으로 줄입니다.
-     *
-     * 41.6667 ÷ 2
-     * = 약 20.8333
-     *
-     * 원본 × 5 × 4.1666667
-     * = 원본 × 약 20.8333
-     */
     private const float RunupRelativeMultiplier =
-        25f /
-        6f;
+        25f / 6f;
 
-    /*
-     * PEAK 원본 Pal Jump에는 내부적으로
-     * jumpMult = 2가 적용됩니다.
-     */
     private const float NativePalJumpMultiplier =
         2f;
 
-    /*
-     * 최종 협동 점프를 원본 ×약 20.8333으로 만들기 위한
-     * 실제 jumpImpulse 배율입니다.
-     *
-     * 약 10.4167 × PEAK 내부 Pal Jump 2배
-     * = 최종 원본 대비 약 20.8333배
-     */
     private const float RunupImpulseMultiplier =
         (
             JumpingPeakJumpMultiplier *
@@ -71,24 +37,11 @@ public sealed class Runup : BaseUnityPlugin
         ) /
         NativePalJumpMultiplier;
 
-    private const float FinalEffectiveMultiplier =
-        JumpingPeakJumpMultiplier *
-        RunupRelativeMultiplier;
-
-    /*
-     * 원본 점프력이 협동 점프 이후에도 남지 않도록
-     * 실제 점프가 끝난 뒤 원본값으로 복구합니다.
-     */
     private const int MaximumRestoreWaitFrames =
         120;
 
     private const int RestoreSafetyFrames =
         4;
-
-    private const int MaximumLogCount =
-        50;
-
-    internal static ManualLogSource ModLogger;
 
     private static readonly Dictionary<int, float>
         OriginalJumpImpulses =
@@ -104,31 +57,15 @@ public sealed class Runup : BaseUnityPlugin
 
     private static int nextRestoreToken;
 
-    private static int appliedLogCount;
-    private static int restoredLogCount;
-    private static int rejectedLogCount;
-
     private Harmony harmony;
 
     private void Awake()
     {
-        ModLogger =
-            Logger;
-
         harmony =
             new Harmony(
                 PluginGUID);
 
         harmony.PatchAll();
-
-        Logger.LogInfo(
-            $"{PluginName} {PluginVersion} loaded. " +
-            $"Build: {BuildMarker}. " +
-            $"Runup impulse multiplier=" +
-            $"{RunupImpulseMultiplier:0.000}. " +
-            $"Final effective multiplier=" +
-            $"{FinalEffectiveMultiplier:0.000}. " +
-            "Pal Jump strength is now half of the previous value.");
     }
 
     private void OnDestroy()
@@ -138,17 +75,11 @@ public sealed class Runup : BaseUnityPlugin
 
         nextRestoreToken = 0;
 
-        appliedLogCount = 0;
-        restoredLogCount = 0;
-        rejectedLogCount = 0;
-
         if (harmony != null)
         {
             harmony.UnpatchSelf();
             harmony = null;
         }
-
-        ModLogger = null;
     }
 
     internal static bool IsAirportScene()
@@ -187,10 +118,6 @@ public sealed class Runup : BaseUnityPlugin
         return character;
     }
 
-    /*
-     * CharacterMovement가 처음 생성됐을 때
-     * PEAK의 원본 jumpImpulse를 저장합니다.
-     */
     private static void StoreOriginalJumpImpulse(
         CharacterMovement movement,
         bool overwrite)
@@ -244,13 +171,6 @@ public sealed class Runup : BaseUnityPlugin
             return originalJumpImpulse > 0f;
         }
 
-        /*
-         * Start 패치보다 늦게 플러그인이 적용되는 상황을
-         * 대비한 보조 저장 경로입니다.
-         *
-         * JumpingPEAK 패치 뒤에 실행되므로 Pal Jump에서는
-         * 현재 값이 원본 jumpImpulse로 복구된 상태입니다.
-         */
         StoreOriginalJumpImpulse(
             movement,
             false);
@@ -290,19 +210,16 @@ public sealed class Runup : BaseUnityPlugin
             return false;
         }
 
-        int currentToken;
-
         return ActiveRestoreTokens.TryGetValue(
                    movement.GetInstanceID(),
-                   out currentToken) &&
+                   out int currentToken) &&
                currentToken == restoreToken;
     }
 
     private static void RestoreOriginalJumpImpulse(
         CharacterMovement movement,
         float originalJumpImpulse,
-        int restoreToken,
-        string reason)
+        int restoreToken)
     {
         if (!IsCurrentRestoreToken(
                 movement,
@@ -314,8 +231,7 @@ public sealed class Runup : BaseUnityPlugin
         int movementId =
             movement.GetInstanceID();
 
-        if (movement != null &&
-            originalJumpImpulse > 0f)
+        if (originalJumpImpulse > 0f)
         {
             movement.jumpImpulse =
                 originalJumpImpulse;
@@ -323,26 +239,8 @@ public sealed class Runup : BaseUnityPlugin
 
         ActiveRestoreTokens.Remove(
             movementId);
-
-        if (restoredLogCount <
-            MaximumLogCount)
-        {
-            restoredLogCount++;
-
-            ModLogger?.LogInfo(
-                $"[Runup] Original jump impulse restored " +
-                $"({restoredLogCount}/{MaximumLogCount}). " +
-                $"Impulse={originalJumpImpulse:0.000}, " +
-                $"Reason={reason}, " +
-                $"Scene=" +
-                $"{SceneManager.GetActiveScene().name}");
-        }
     }
 
-    /*
-     * PEAK의 실제 Pal Jump 코루틴이 jumpImpulse를
-     * 모두 사용한 이후 원본값을 복구합니다.
-     */
     private static IEnumerator RestoreAfterPalJump(
         CharacterMovement movement,
         Character character,
@@ -357,8 +255,7 @@ public sealed class Runup : BaseUnityPlugin
             RestoreOriginalJumpImpulse(
                 movement,
                 originalJumpImpulse,
-                restoreToken,
-                "InvalidCharacter");
+                restoreToken);
 
             yield break;
         }
@@ -366,12 +263,6 @@ public sealed class Runup : BaseUnityPlugin
         bool palJumpStarted =
             false;
 
-        /*
-         * 원본 JumpRpc가 실행되면 다음 중 하나가 발생합니다.
-         *
-         * 1. chargingJump가 true가 됨
-         * 2. sincePalJump가 0으로 초기화됨
-         */
         for (int frame = 0;
              frame < MaximumRestoreWaitFrames;
              frame++)
@@ -390,8 +281,7 @@ public sealed class Runup : BaseUnityPlugin
                 RestoreOriginalJumpImpulse(
                     movement,
                     originalJumpImpulse,
-                    restoreToken,
-                    "CharacterDestroyed");
+                    restoreToken);
 
                 yield break;
             }
@@ -402,8 +292,7 @@ public sealed class Runup : BaseUnityPlugin
                 RestoreOriginalJumpImpulse(
                     movement,
                     originalJumpImpulse,
-                    restoreToken,
-                    "CharacterUnavailable");
+                    restoreToken);
 
                 yield break;
             }
@@ -425,25 +314,16 @@ public sealed class Runup : BaseUnityPlugin
                 WaitForPhysics;
         }
 
-        /*
-         * 다른 패치가 원본 JumpRpc를 차단한 경우에는
-         * 강화값을 유지하지 않고 즉시 복구합니다.
-         */
         if (!palJumpStarted)
         {
             RestoreOriginalJumpImpulse(
                 movement,
                 originalJumpImpulse,
-                restoreToken,
-                "PalJumpDidNotStart");
+                restoreToken);
 
             yield break;
         }
 
-        /*
-         * PEAK 점프 준비 단계가 끝날 때까지 기다립니다.
-         * 이 구간에서 실제 jumpImpulse가 소비됩니다.
-         */
         for (int frame = 0;
              frame < MaximumRestoreWaitFrames;
              frame++)
@@ -465,19 +345,13 @@ public sealed class Runup : BaseUnityPlugin
                 RestoreOriginalJumpImpulse(
                     movement,
                     originalJumpImpulse,
-                    restoreToken,
-                    "CharacterDestroyedDuringJump");
+                    restoreToken);
 
                 yield break;
             }
 
             if (!character.data.chargingJump)
             {
-                /*
-                 * chargingJump가 해제된 직후에도
-                 * 원본 점프 코루틴이 같은 물리 프레임에서
-                 * 힘을 적용할 수 있으므로 추가로 기다립니다.
-                 */
                 for (int safetyFrame = 0;
                      safetyFrame < RestoreSafetyFrames;
                      safetyFrame++)
@@ -496,8 +370,7 @@ public sealed class Runup : BaseUnityPlugin
                 RestoreOriginalJumpImpulse(
                     movement,
                     originalJumpImpulse,
-                    restoreToken,
-                    "PalJumpCompleted");
+                    restoreToken);
 
                 yield break;
             }
@@ -506,13 +379,9 @@ public sealed class Runup : BaseUnityPlugin
         RestoreOriginalJumpImpulse(
             movement,
             originalJumpImpulse,
-            restoreToken,
-            "RestoreTimeout");
+            restoreToken);
     }
 
-    /*
-     * 캐릭터가 생성될 때 원본 jumpImpulse를 확보합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterMovement),
         "Start")]
@@ -528,12 +397,6 @@ public sealed class Runup : BaseUnityPlugin
         }
     }
 
-    /*
-     * PEAK의 협동 Pal Jump만 강화합니다.
-     *
-     * 일반 점프는 isPalJump == false이므로
-     * 이 패치에서 변경하지 않습니다.
-     */
     [HarmonyPatch(
         typeof(CharacterMovement),
         nameof(CharacterMovement.JumpRpc),
@@ -556,10 +419,6 @@ public sealed class Runup : BaseUnityPlugin
             public int RestoreToken;
         }
 
-        /*
-         * JumpingPEAK가 Pal Jump 값을 원본으로 복구한 다음
-         * Runup의 강화값을 적용해야 합니다.
-         */
         [HarmonyPrefix]
         [HarmonyPriority(Priority.Last)]
         [HarmonyAfter(
@@ -585,9 +444,6 @@ public sealed class Runup : BaseUnityPlugin
 
             if (__instance == null)
             {
-                LogRejected(
-                    "CharacterMovement is null.");
-
                 return;
             }
 
@@ -597,16 +453,9 @@ public sealed class Runup : BaseUnityPlugin
 
             if (character == null)
             {
-                LogRejected(
-                    "Character could not be resolved.");
-
                 return;
             }
 
-            /*
-             * 실제로 발사되는 플레이어의 소유 클라이언트에서만
-             * 물리 점프력을 변경합니다.
-             */
             if (!character.IsLocal)
             {
                 return;
@@ -614,9 +463,6 @@ public sealed class Runup : BaseUnityPlugin
 
             if (character.data == null)
             {
-                LogRejected(
-                    "Character.data is null.");
-
                 return;
             }
 
@@ -631,15 +477,10 @@ public sealed class Runup : BaseUnityPlugin
                 return;
             }
 
-            float originalJumpImpulse;
-
             if (!TryGetOriginalJumpImpulse(
                     __instance,
-                    out originalJumpImpulse))
+                    out float originalJumpImpulse))
             {
-                LogRejected(
-                    "Original jumpImpulse could not be resolved.");
-
                 return;
             }
 
@@ -666,38 +507,10 @@ public sealed class Runup : BaseUnityPlugin
             __state.RestoreToken =
                 restoreToken;
 
-            /*
-             * PEAK 내부 Pal Jump 2배가 이후 추가되므로
-             * 최종 수직 계수는 원본의 약 20.8333배가 됩니다.
-             */
             __instance.jumpImpulse =
                 runupJumpImpulse;
-
-            if (appliedLogCount <
-                MaximumLogCount)
-            {
-                appliedLogCount++;
-
-                ModLogger?.LogInfo(
-                    $"[Runup] Enhanced Pal Jump applied " +
-                    $"({appliedLogCount}/{MaximumLogCount}). " +
-                    $"OriginalImpulse={originalJumpImpulse:0.000}, " +
-                    $"RunupImpulseMultiplier=" +
-                    $"{RunupImpulseMultiplier:0.000}, " +
-                    $"PatchedImpulse={runupJumpImpulse:0.000}, " +
-                    $"NativePalMultiplier=" +
-                    $"{NativePalJumpMultiplier:0.000}, " +
-                    $"FinalEffectiveMultiplier=" +
-                    $"{FinalEffectiveMultiplier:0.000}, " +
-                    $"Scene=" +
-                    $"{SceneManager.GetActiveScene().name}");
-            }
         }
 
-        /*
-         * 원본 JumpRpc가 점프 코루틴을 만든 다음
-         * 복구 감시 코루틴을 시작합니다.
-         */
         [HarmonyPostfix]
         [HarmonyPriority(Priority.Last)]
         [HarmonyAfter(
@@ -725,24 +538,5 @@ public sealed class Runup : BaseUnityPlugin
                     __state.PreviousSincePalJump,
                     __state.RestoreToken));
         }
-    }
-
-    private static void LogRejected(
-        string reason)
-    {
-        if (rejectedLogCount >=
-            MaximumLogCount)
-        {
-            return;
-        }
-
-        rejectedLogCount++;
-
-        ModLogger?.LogWarning(
-            $"[Runup] Pal Jump boost rejected " +
-            $"({rejectedLogCount}/{MaximumLogCount}). " +
-            $"Reason={reason}, " +
-            $"Scene=" +
-            $"{SceneManager.GetActiveScene().name}");
     }
 }
