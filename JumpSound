@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Logging;
 using HarmonyLib;
 using System;
 using UnityEngine;
@@ -15,50 +14,23 @@ public sealed class JumpSound : BaseUnityPlugin
         "JumpSound";
 
     public const string PluginVersion =
-        "1.0.0";
+        "1.0.1";
 
-    private const string BuildMarker =
-        "BounceShroomJumpSound-R1";
-
-    /*
-     * 방방균류 사운드를 찾지 못했을 때
-     * 다시 검색하는 간격입니다.
-     */
     private const float SoundSearchInterval =
         1f;
 
     private const int MinimumSoundScore =
         80;
 
-    private const int MaximumLogCount =
-        30;
-
-    internal static ManualLogSource ModLogger;
-
-    /*
-     * 원본 방방균류가 사용하는 SFX_Instance입니다.
-     */
     private static SFX_Instance sourceBounceSound;
-
-    /*
-     * 원본 방방균류 사운드와 재생 쿨타임이 충돌하지 않도록
-     * 점프 전용으로 복제한 SFX_Instance입니다.
-     */
     private static SFX_Instance runtimeJumpSound;
 
     private static float nextSoundSearchTime;
-
-    private static int soundFoundLogCount;
-    private static int soundPlayedLogCount;
-    private static int soundMissingLogCount;
 
     private Harmony harmony;
 
     private void Awake()
     {
-        ModLogger =
-            Logger;
-
         harmony =
             new Harmony(PluginGUID);
 
@@ -68,12 +40,6 @@ public sealed class JumpSound : BaseUnityPlugin
             OnSceneLoaded;
 
         TryFindBounceShroomSound();
-
-        Logger.LogInfo(
-            $"{PluginName} {PluginVersion} loaded. " +
-            $"Build: {BuildMarker}. " +
-            "Successful character jumps will use the " +
-            "PEAK bounce-shroom sound.");
     }
 
     private void Update()
@@ -106,23 +72,11 @@ public sealed class JumpSound : BaseUnityPlugin
         sourceBounceSound =
             null;
 
-        soundFoundLogCount =
-            0;
-
-        soundPlayedLogCount =
-            0;
-
-        soundMissingLogCount =
-            0;
-
         if (harmony != null)
         {
             harmony.UnpatchSelf();
             harmony = null;
         }
-
-        ModLogger =
-            null;
     }
 
     private static void OnSceneLoaded(
@@ -132,10 +86,6 @@ public sealed class JumpSound : BaseUnityPlugin
         nextSoundSearchTime =
             0f;
 
-        /*
-         * 이전 씬에서 사운드를 찾지 못했으면
-         * 새 씬의 방방균류 오브젝트를 다시 검색합니다.
-         */
         if (runtimeJumpSound == null)
         {
             TryFindBounceShroomSound();
@@ -178,13 +128,6 @@ public sealed class JumpSound : BaseUnityPlugin
         return character;
     }
 
-    /*
-     * 먼저 실제 CollisionModifier 오브젝트에서
-     * BounceShroom의 bounceSFX를 찾습니다.
-     *
-     * 방방균류는 CollisionModifier의 bounceSFX를
-     * 충돌 지점에서 재생하는 구조입니다.
-     */
     private static bool TryFindBounceShroomSound()
     {
         if (IsValidSound(
@@ -195,9 +138,6 @@ public sealed class JumpSound : BaseUnityPlugin
 
         SFX_Instance selectedSound =
             null;
-
-        string selectedSource =
-            string.Empty;
 
         int selectedScore =
             int.MinValue;
@@ -238,13 +178,9 @@ public sealed class JumpSound : BaseUnityPlugin
                     ScoreBounceShroomText(
                         soundText);
 
-                /*
-                 * 실제로 튕기는 CollisionModifier를 우선합니다.
-                 */
                 if (modifier.knockback > 0f)
                 {
-                    score +=
-                        10;
+                    score += 10;
                 }
 
                 if (score <=
@@ -258,17 +194,9 @@ public sealed class JumpSound : BaseUnityPlugin
 
                 selectedSound =
                     modifier.bounceSFX;
-
-                selectedSource =
-                    hierarchyText;
             }
         }
 
-        /*
-         * 현재 씬에서 방방균류 CollisionModifier를 찾지 못하면
-         * 로드된 SFX_Instance 에셋 이름과 AudioClip 이름을
-         * 직접 검사합니다.
-         */
         if (selectedSound == null ||
             selectedScore <
             MinimumSoundScore)
@@ -311,9 +239,6 @@ public sealed class JumpSound : BaseUnityPlugin
 
                     selectedSound =
                         sound;
-
-                    selectedSource =
-                        soundText;
                 }
             }
         }
@@ -322,37 +247,20 @@ public sealed class JumpSound : BaseUnityPlugin
             selectedScore <
             MinimumSoundScore)
         {
-            if (soundMissingLogCount <
-                MaximumLogCount)
-            {
-                soundMissingLogCount++;
-
-                ModLogger?.LogWarning(
-                    $"[JumpSound] Bounce-shroom sound not found " +
-                    $"({soundMissingLogCount}/{MaximumLogCount}). " +
-                    $"BestScore={selectedScore}, " +
-                    $"BestCandidate={selectedSource}, " +
-                    $"Scene=" +
-                    $"{SceneManager.GetActiveScene().name}");
-            }
-
             return false;
         }
 
         SetBounceShroomSound(
-            selectedSound,
-            selectedSource,
-            selectedScore);
+            selectedSound);
 
         return runtimeJumpSound != null;
     }
 
     private static void SetBounceShroomSound(
-        SFX_Instance sound,
-        string source,
-        int score)
+        SFX_Instance sound)
     {
-        if (!IsValidSound(sound))
+        if (!IsValidSound(
+                sound))
         {
             return;
         }
@@ -370,10 +278,6 @@ public sealed class JumpSound : BaseUnityPlugin
         sourceBounceSound =
             sound;
 
-        /*
-         * 원본 방방균류의 재생 시간 및 cooldown 상태와
-         * 일반 점프 사운드가 서로 영향을 주지 않도록 복제합니다.
-         */
         runtimeJumpSound =
             UnityEngine.Object.Instantiate<
                 SFX_Instance>(
@@ -389,35 +293,20 @@ public sealed class JumpSound : BaseUnityPlugin
 
         runtimeJumpSound.hideFlags =
             HideFlags.HideAndDontSave;
-
-        if (soundFoundLogCount <
-            MaximumLogCount)
-        {
-            soundFoundLogCount++;
-
-            ModLogger?.LogInfo(
-                $"[JumpSound] Bounce-shroom sound selected " +
-                $"({soundFoundLogCount}/{MaximumLogCount}). " +
-                $"SFX={sourceBounceSound.name}, " +
-                $"Score={score}, " +
-                $"Source={source}, " +
-                $"ClipCount=" +
-                $"{sourceBounceSound.clips.Length}, " +
-                $"Scene=" +
-                $"{SceneManager.GetActiveScene().name}");
-        }
     }
 
     private static void DestroyRuntimeSound()
     {
-        if (runtimeJumpSound != null)
+        if (runtimeJumpSound == null)
         {
-            UnityEngine.Object.Destroy(
-                runtimeJumpSound);
-
-            runtimeJumpSound =
-                null;
+            return;
         }
+
+        UnityEngine.Object.Destroy(
+            runtimeJumpSound);
+
+        runtimeJumpSound =
+            null;
     }
 
     private static bool IsValidSound(
@@ -527,88 +416,77 @@ public sealed class JumpSound : BaseUnityPlugin
                 lowerText,
                 "bounceshroom"))
         {
-            score +=
-                200;
+            score += 200;
         }
 
         if (Contains(
                 lowerText,
                 "bounce shroom"))
         {
-            score +=
-                200;
+            score += 200;
         }
 
         if (Contains(
                 lowerText,
                 "bounce_shroom"))
         {
-            score +=
-                200;
+            score += 200;
         }
 
         if (Contains(
                 lowerText,
                 "shroombounce"))
         {
-            score +=
-                180;
+            score += 180;
         }
 
         if (Contains(
                 lowerText,
                 "shroom bounce"))
         {
-            score +=
-                180;
+            score += 180;
         }
 
         if (Contains(
                 lowerText,
                 "mushroom bounce"))
         {
-            score +=
-                170;
+            score += 170;
         }
 
         if (Contains(
                 lowerText,
                 "bounce mushroom"))
         {
-            score +=
-                170;
+            score += 170;
         }
 
         if (Contains(
                 lowerText,
                 "bounce"))
         {
-            score +=
-                25;
+            score += 25;
         }
 
         if (Contains(
                 lowerText,
                 "shroom"))
         {
-            score +=
-                80;
+            score += 80;
         }
 
         if (Contains(
                 lowerText,
                 "mushroom"))
         {
-            score +=
-                70;
+            score += 70;
         }
 
         if (Contains(
                 lowerText,
                 "fungus"))
         {
-            score +=
-                50;
+            score += 50;
         }
 
         return score;
@@ -645,10 +523,6 @@ public sealed class JumpSound : BaseUnityPlugin
             return;
         }
 
-        /*
-         * 각 클라이언트의 JumpRpc에서 재생되므로
-         * 다른 플레이어의 점프도 해당 캐릭터 위치에서 들립니다.
-         */
         SFX_Player.instance.PlaySFX(
             runtimeJumpSound,
             character.Center,
@@ -656,30 +530,8 @@ public sealed class JumpSound : BaseUnityPlugin
             null,
             1f,
             false);
-
-        if (soundPlayedLogCount <
-            MaximumLogCount)
-        {
-            soundPlayedLogCount++;
-
-            ModLogger?.LogInfo(
-                $"[JumpSound] Bounce-shroom jump sound played " +
-                $"({soundPlayedLogCount}/{MaximumLogCount}). " +
-                $"Character={character.name}, " +
-                $"Position={character.Center}, " +
-                $"Scene=" +
-                $"{SceneManager.GetActiveScene().name}");
-        }
     }
 
-    /*
-     * PEAK의 TryToJump는 점프 조건을 통과하면
-     * JumpRpc(false)를 호출합니다.
-     *
-     * JumpRpc가 실제로 점프 횟수를 감소시키고
-     * chargingJump를 true로 변경하므로,
-     * 이 지점에서 성공한 점프만 판별해 사운드를 재생합니다.
-     */
     [HarmonyPatch(
         typeof(CharacterMovement),
         nameof(CharacterMovement.JumpRpc),
@@ -761,11 +613,6 @@ public sealed class JumpSound : BaseUnityPlugin
             Character character =
                 __state.Character;
 
-            /*
-             * JumpingPEAK나 BeforeStart에서 JumpRpc를 차단했다면
-             * 점프 횟수와 chargingJump가 변하지 않으므로
-             * 사운드도 재생되지 않습니다.
-             */
             bool jumpsDecreased =
                 character.data.jumpsRemaining <
                 __state.JumpsRemainingBefore;
