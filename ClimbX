@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Logging;
 using HarmonyLib;
 using System;
 using UnityEngine;
@@ -10,47 +9,23 @@ public sealed class ClimbX : BaseUnityPlugin
 {
     public const string PluginGUID = "Sapphire009.ClimbX";
     public const string PluginName = "ClimbX";
-    public const string PluginVersion = "1.0.0";
-
-    private const string BuildMarker =
-        "WallGrabDisabled-R3";
-
-    private const int MaximumLogCount = 20;
-
-    internal static ManualLogSource ModLogger;
-
-    private static int blockedGrabLogCount;
+    public const string PluginVersion = "1.0.1";
 
     private Harmony harmony;
 
     private void Awake()
     {
-        ModLogger = Logger;
-
-        harmony =
-            new Harmony(PluginGUID);
-
+        harmony = new Harmony(PluginGUID);
         harmony.PatchAll();
-
-        Logger.LogInfo(
-            $"{PluginName} {PluginVersion} loaded. " +
-            $"Build: {BuildMarker}. " +
-            "Local player wall grabbing is completely disabled " +
-            "outside Airport.");
     }
 
     private void OnDestroy()
     {
-        blockedGrabLogCount =
-            0;
-
         if (harmony != null)
         {
             harmony.UnpatchSelf();
             harmony = null;
         }
-
-        ModLogger = null;
     }
 
     internal static bool IsAirportScene()
@@ -102,9 +77,6 @@ public sealed class ClimbX : BaseUnityPlugin
             return false;
         }
 
-        /*
-         * 공항에서는 PEAK 원본 벽 잡기를 유지합니다.
-         */
         if (IsAirportScene())
         {
             return false;
@@ -113,38 +85,6 @@ public sealed class ClimbX : BaseUnityPlugin
         return true;
     }
 
-    private static void LogBlockedGrab(
-        Character character,
-        string source)
-    {
-        if (blockedGrabLogCount >=
-            MaximumLogCount)
-        {
-            return;
-        }
-
-        blockedGrabLogCount++;
-
-        string characterName =
-            character != null
-                ? character.name
-                : "Unknown";
-
-        ModLogger?.LogInfo(
-            $"[ClimbX] Wall grab blocked " +
-            $"({blockedGrabLogCount}/{MaximumLogCount}). " +
-            $"Source={source}, " +
-            $"Character={characterName}, " +
-            $"Scene={SceneManager.GetActiveScene().name}");
-    }
-
-    /*
-     * PEAK의 TryToStartWallClimb은 가장 먼저
-     * CanClimb() 결과를 확인합니다.
-     *
-     * 로컬 플레이어에게 false를 반환하여
-     * 벽 탐색과 StartClimbRpc 호출을 막습니다.
-     */
     [HarmonyPatch(
         typeof(CharacterClimbing),
         nameof(CharacterClimbing.CanClimb))]
@@ -164,19 +104,12 @@ public sealed class ClimbX : BaseUnityPlugin
                 return true;
             }
 
-            __result =
-                false;
+            __result = false;
 
             return false;
         }
     }
 
-    /*
-     * CanClimb 외에도 벽 잡기 시도 메서드 자체를 차단합니다.
-     *
-     * 다른 코드나 모드가 CanClimb을 거치지 않고
-     * TryToStartWallClimb을 호출하는 경우를 막는 안전장치입니다.
-     */
     [HarmonyPatch(
         typeof(CharacterClimbing),
         "TryToStartWallClimb",
@@ -202,14 +135,6 @@ public sealed class ClimbX : BaseUnityPlugin
                 return true;
             }
 
-            LogBlockedGrab(
-                character,
-                "TryToStartWallClimb");
-
-            /*
-             * 원본 TryToStartWallClimb을 실행하지 않습니다.
-             * 따라서 벽 Raycast 및 StartClimbRpc도 발생하지 않습니다.
-             */
             return false;
         }
     }
