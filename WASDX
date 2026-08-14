@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Logging;
 using HarmonyLib;
 using System;
 using UnityEngine;
@@ -10,17 +9,8 @@ public sealed class WASDX : BaseUnityPlugin
 {
     public const string PluginGUID = "Sapphire009.WASDX";
     public const string PluginName = "WASDX";
-    public const string PluginVersion = "1.0.0";
+    public const string PluginVersion = "1.0.1";
 
-    private const string BuildMarker =
-        "GroundLock-CameraLean-R1";
-
-    internal static ManualLogSource ModLogger;
-
-    /*
-     * CharacterInput.Sample에서 읽은 원래 WASD 입력입니다.
-     * 실제 이동 입력은 0으로 막지만 카메라 기울임에는 사용합니다.
-     */
     internal static Vector2 GroundLeanInput =
         Vector2.zero;
 
@@ -28,16 +18,8 @@ public sealed class WASDX : BaseUnityPlugin
 
     private void Awake()
     {
-        ModLogger = Logger;
-
         harmony = new Harmony(PluginGUID);
         harmony.PatchAll();
-
-        Logger.LogInfo(
-            $"{PluginName} {PluginVersion} loaded. " +
-            $"Build: {BuildMarker}. " +
-            "Ground WASD movement is blocked outside Airport. " +
-            "Air movement remains enabled.");
     }
 
     private void OnDestroy()
@@ -52,8 +34,6 @@ public sealed class WASDX : BaseUnityPlugin
             harmony.UnpatchSelf();
             harmony = null;
         }
-
-        ModLogger = null;
     }
 
     internal static bool IsAirportScene()
@@ -106,22 +86,9 @@ public sealed class WASDX : BaseUnityPlugin
             return false;
         }
 
-        /*
-         * PEAK가 실제 지면 착지 상태로 판정했을 때만
-         * 이동을 차단합니다.
-         *
-         * 점프하여 isGrounded가 false가 되는 순간부터
-         * WASD 이동이 다시 정상적으로 허용됩니다.
-         */
         return character.data.isGrounded;
     }
 
-    /*
-     * PEAK가 WASD 입력을 읽은 직후 실행합니다.
-     *
-     * 점프 입력, 시점 입력, 상호작용 입력 등은 건드리지 않고
-     * 지상에서 movementInput만 0으로 바꿉니다.
-     */
     [HarmonyPatch(
         typeof(CharacterInput),
         "Sample",
@@ -144,7 +111,8 @@ public sealed class WASDX : BaseUnityPlugin
             }
 
             Character character =
-                ResolveCharacter(__instance);
+                ResolveCharacter(
+                    __instance);
 
             if (character == null ||
                 !character.IsLocal ||
@@ -153,7 +121,8 @@ public sealed class WASDX : BaseUnityPlugin
                 return;
             }
 
-            if (!ShouldBlockGroundMovement(character))
+            if (!ShouldBlockGroundMovement(
+                    character))
             {
                 GroundLeanInput =
                     Vector2.zero;
@@ -161,38 +130,14 @@ public sealed class WASDX : BaseUnityPlugin
                 return;
             }
 
-            /*
-             * 이동을 막기 전에 원래 입력을 저장합니다.
-             *
-             * X:
-             * A = -1
-             * D = +1
-             *
-             * Y:
-             * S = -1
-             * W = +1
-             */
             GroundLeanInput =
                 __instance.movementInput;
 
-            /*
-             * 지상 이동만 차단합니다.
-             *
-             * jumpWasPressed와 jumpIsPressed는 변경하지 않으므로
-             * 점프 자체는 정상적으로 실행됩니다.
-             */
             __instance.movementInput =
                 Vector2.zero;
         }
     }
 
-    /*
-     * 이전 공중 이동 입력이 worldMovementInput_Lerp에 남아 있더라도
-     * 지상에서는 이동 가속도가 발생하지 않게 막습니다.
-     *
-     * 물리적 경사 미끄러짐이나 외부 충격까지 고정하는 것이 아니라
-     * 플레이어 이동 입력으로 발생하는 힘만 0으로 만듭니다.
-     */
     [HarmonyPatch(
         typeof(CharacterMovement),
         "GetMovementForce")]
@@ -204,9 +149,11 @@ public sealed class WASDX : BaseUnityPlugin
             ref float __result)
         {
             Character character =
-                ResolveCharacter(__instance);
+                ResolveCharacter(
+                    __instance);
 
-            if (!ShouldBlockGroundMovement(character))
+            if (!ShouldBlockGroundMovement(
+                    character))
             {
                 return;
             }
@@ -215,29 +162,19 @@ public sealed class WASDX : BaseUnityPlugin
         }
     }
 
-    /*
-     * PEAK의 기본 카메라 회전이 적용된 이후
-     * WASD 방향에 맞는 작은 기울기를 추가합니다.
-     */
     [HarmonyPatch(
         typeof(MainCameraMovement),
         "CharacterCam")]
     private static class MainCameraMovementCharacterCamPatch
     {
-        /*
-         * W/S의 앞뒤 기울기 각도입니다.
-         */
-        private const float ForwardTiltDegrees = 4f;
+        private const float ForwardTiltDegrees =
+            4f;
 
-        /*
-         * A/D의 좌우 기울기 각도입니다.
-         */
-        private const float SideTiltDegrees = 4f;
+        private const float SideTiltDegrees =
+            4f;
 
-        /*
-         * 기울어지고 원위치로 돌아오는 속도입니다.
-         */
-        private const float TiltSmoothSpeed = 9f;
+        private const float TiltSmoothSpeed =
+            9f;
 
         private static Vector2 currentTilt =
             Vector2.zero;
@@ -257,11 +194,8 @@ public sealed class WASDX : BaseUnityPlugin
             Vector2 targetTilt =
                 Vector2.zero;
 
-            /*
-             * 공항이 아니고 지면에 붙어 있을 때만
-             * 저장된 WASD 입력 방향으로 카메라를 기울입니다.
-             */
-            if (ShouldBlockGroundMovement(character))
+            if (ShouldBlockGroundMovement(
+                    character))
             {
                 targetTilt =
                     GroundLeanInput;
@@ -279,18 +213,13 @@ public sealed class WASDX : BaseUnityPlugin
                     targetTilt,
                     smoothAmount);
 
-            if (currentTilt.sqrMagnitude < 0.000001f)
+            if (currentTilt.sqrMagnitude <
+                0.000001f)
             {
                 currentTilt =
                     Vector2.zero;
             }
 
-            /*
-             * W: 앞으로 기울임
-             * S: 뒤로 기울임
-             * A: 왼쪽으로 기울임
-             * D: 오른쪽으로 기울임
-             */
             float pitch =
                 currentTilt.y *
                 ForwardTiltDegrees;
@@ -305,10 +234,6 @@ public sealed class WASDX : BaseUnityPlugin
                     0f,
                     roll);
 
-            /*
-             * PEAK가 계산한 기본 시야 방향을 유지한 채
-             * 카메라 자체의 로컬 기울기만 추가합니다.
-             */
             __instance.transform.rotation =
                 __instance.transform.rotation *
                 leanRotation;
